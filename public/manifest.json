@@ -1,0 +1,16 @@
+{
+  "name": "Driving Analyzer",
+  "short_name": "G-Meter",
+  "description": "スマホセンサー連動 荷重移動・ドライビング診断",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.*
+gh.zip
+gh_2.54.0_macOS_arm64/

@@ -1,0 +1,8 @@
+#!/usr/bin/expect -f
+set timeout -1
+spawn npx surge out cruise-power-analyzer.surge.sh
+expect "email:"
+send "kentachida.cruise@gmail.com\r"
+expect "password:"
+send "password123!\r"
+expect eof
