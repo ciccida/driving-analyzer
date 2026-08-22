@@ -545,38 +545,38 @@ export default function Home() {
                {formatTime(currentLapTime)}
             </div>
             
-            <div className="flex gap-3 w-full mb-2">
+            <div className="flex gap-3 w-full mb-3">
                <div className="flex-1 bg-gray-950 rounded-2xl p-3 text-center border border-gray-800">
                  <div className="text-gray-500 text-xs font-bold mb-1">BEST LAP</div>
-                 <div className="font-mono text-xl text-pink-400 font-bold">{bestLapTime !== null ? formatTime(bestLapTime) : "--:--.---"}</div>
+                 <div className="font-mono text-2xl text-pink-400 font-bold tracking-tight">{bestLapTime !== null ? formatTime(bestLapTime) : "--:--.---"}</div>
                </div>
                <div className="flex-1 bg-gray-950 rounded-2xl p-3 text-center border border-gray-800">
                  <div className="text-gray-500 text-xs font-bold mb-1">LAST LAP</div>
-                 <div className="font-mono text-xl text-gray-300">{lastLapTime !== null ? formatTime(lastLapTime) : "--:--.---"}</div>
+                 <div className="font-mono text-2xl text-gray-200 tracking-tight">{lastLapTime !== null ? formatTime(lastLapTime) : "--:--.---"}</div>
                </div>
             </div>
 
-            <div className="w-full bg-gray-950 rounded-2xl border border-gray-800 p-2 mb-4 max-h-[80px] overflow-y-auto">
+            <div className="w-full mb-3">
               {laps.length === 0 ? (
-                <div className="text-gray-600 text-xs text-center py-2">No laps recorded yet</div>
+                <div className="text-gray-600 text-sm text-center py-2 font-medium">Laps will appear here</div>
               ) : (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-2">
                   {laps.map((lap, index) => (
-                    <div key={index} className="flex justify-between items-center text-sm font-mono px-2 py-1 rounded bg-gray-900/50">
-                      <span className="text-gray-500">Lap {index + 1}</span>
-                      <span className={lap === bestLapTime ? "text-pink-400 font-bold" : "text-gray-300"}>{formatTime(lap)}</span>
+                    <div key={index} className="flex justify-between items-center text-lg font-mono px-3 py-2 rounded-xl bg-gray-950 border border-gray-800 shadow-sm">
+                      <span className="text-gray-400 font-bold">Lap {index + 1}</span>
+                      <span className={lap === bestLapTime ? "text-pink-400 font-black" : "text-gray-200 font-bold"}>{formatTime(lap)}</span>
                     </div>
-                  )).reverse()}
+                  )).slice(-3).reverse()}
                 </div>
               )}
             </div>
 
             <button 
-              onClick={triggerLap}
-              className="w-full bg-pink-900/30 hover:bg-pink-800/40 border border-pink-500/50 text-pink-300 py-3 rounded-2xl font-bold transition-colors shadow-inner flex items-center justify-center gap-2"
+              onClick={() => triggerLap()}
+              className="w-full bg-gray-800/50 hover:bg-gray-700/50 border border-gray-600/30 text-gray-400 py-2 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 text-sm"
             >
-              <Flag size={18} />
-              手動ラップボタン (プロトタイプ)
+              <Flag size={14} />
+              手動ラップ (バックアップ用)
             </button>
           </div>
         )}
