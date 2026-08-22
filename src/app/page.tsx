@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { AlertTriangle, Car, Flag, Play, Square, Settings, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, Car, Flag, Play, Square, Settings, CheckCircle2, MapPin } from "lucide-react";
 import { cruiseLogo, cruiseMascot } from "../images";
 
 type Mode = "Street" | "Track";
@@ -32,6 +32,22 @@ export default function Home() {
   const [bestLapTime, setBestLapTime] = useState<number | null>(null);
   const [laps, setLaps] = useState<number[]>([]);
   
+  // GPS & Lap trigger states
+  const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [lastLapTriggerTime, setLastLapTriggerTime] = useState<number>(0);
+  
+  // Utility to calculate distance in meters
+  const getDistanceInM = useCallback((lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    return R * c;
+  }, []);
+
   // Real-time measurement state
   const [currentG, setCurrentG] = useState({ x: 0, y: 0 });
   const [maxG, setMaxG] = useState(0);
@@ -48,28 +64,52 @@ export default function Home() {
   // ----------------------------------------------------------------------
   // Setup & Permissions
   // ----------------------------------------------------------------------
-  const requestPermission = async () => {
-    if (typeof window !== "undefined" && typeof (window as any).DeviceMotionEvent !== "undefined" && typeof (window as any).DeviceMotionEvent.requestPermission === "function") {
-      try {
-        const permission = await (window as any).DeviceMotionEvent.requestPermission();
-        if (permission === "granted") {
-          setPermissionGranted(true);
-        } else {
-          alert("Sensor permission denied");
-        }
-      } catch (error) {
-        console.error(error);
-      }
+  useEffect(() => {
+    if (typeof (DeviceMotionEvent as any) !== 'undefined' && typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+      setPermissionGranted(false);
     } else {
-      // Non-iOS 13+ devices
+      setPermissionGranted(true);
+    }
+  }, []);
+
+  const requestPermission = () => {
+    if (typeof (DeviceMotionEvent as any) !== 'undefined' && typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+      (DeviceMotionEvent as any).requestPermission()
+        .then((response: string) => {
+          if (response == 'granted') {
+            setPermissionGranted(true);
+          } else {
+            alert("センサーアクセスが拒否されました");
+          }
+        })
+        .catch(console.error);
+    } else {
       setPermissionGranted(true);
     }
   };
 
-  const calibrate = () => {
-    // Current smoothed 3D acceleration is taken as the gravity vector
-    setGravity({ ...smoothRawRef.current });
+  const calibrateZero = () => {
+    setGravity({
+      x: smoothRawRef.current.x,
+      y: smoothRawRef.current.y,
+      z: smoothRawRef.current.z
+    });
     alert("キャリブレーション完了: スマホの傾きを考慮してゼロ点を設定しました。");
+  };
+  
+  const setStartFinishLine = () => {
+    if (!navigator.geolocation) {
+      alert("GPS機能がサポートされていません。");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setTargetLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        alert(`スタートラインを設定しました！\n緯度: ${pos.coords.latitude.toFixed(4)}\n経度: ${pos.coords.longitude.toFixed(4)}\n\nテスト時はこの地点の半径20m以内で自動ラップが計測されます。`);
+      },
+      (err) => alert("位置情報の取得に失敗しました。GPSをオンにしてください。"),
+      { enableHighAccuracy: true }
+    );
   };
 
   const stopMeasurement = () => {
@@ -89,8 +129,8 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [viewState, mode, lapStartTime]);
 
-  const triggerLap = () => {
-    const now = Date.now();
+  const triggerLap = useCallback((triggerTime?: number) => {
+    const now = triggerTime || Date.now();
     if (lapStartTime === null) {
       setLapStartTime(now);
     } else {
@@ -103,11 +143,34 @@ export default function Home() {
       setLapStartTime(now);
       setCurrentLapTime(0);
     }
-  };
+  }, [lapStartTime, bestLapTime]);
+
+  // GPS監視処理
+  useEffect(() => {
+    if (viewState !== "measuring" || mode !== "Track" || !targetLocation) return;
+    
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const dist = getDistanceInM(latitude, longitude, targetLocation.lat, targetLocation.lng);
+        const now = Date.now();
+        // 半径20メートル以内に入り、かつ前回のラップから10秒以上経過している場合
+        if (dist < 20 && now - lastLapTriggerTime > 10000) {
+          triggerLap(now);
+          setLastLapTriggerTime(now);
+        }
+      },
+      (error) => console.error("GPS Watch Error:", error),
+      { enableHighAccuracy: true }
+    );
+    
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [viewState, mode, targetLocation, lastLapTriggerTime, triggerLap, getDistanceInM]);
 
   const formatTime = (ms: number) => {
-    const mins = Math.floor(ms / 60000);
-    const secs = Math.floor((ms % 60000) / 1000);
+    const totalSecs = Math.floor(ms / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
     const millis = ms % 1000;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${millis.toString().padStart(3, '0')}`;
   };
@@ -420,12 +483,22 @@ export default function Home() {
           ) : (
             <>
               <button 
-                onClick={calibrate}
+                onClick={calibrateZero}
                 className="w-full bg-gray-800 hover:bg-gray-700 py-4 rounded-xl font-bold flex justify-center items-center gap-2 transition-colors text-white"
               >
                 <Settings size={18} />
                 水平ゼロ点調整
               </button>
+
+              {mode === "Track" && (
+                <button 
+                  onClick={setStartFinishLine}
+                  className="w-full bg-gray-800 border border-pink-500/30 hover:bg-gray-700 py-4 rounded-xl font-bold flex justify-center items-center gap-2 transition-colors text-pink-300"
+                >
+                  <MapPin size={18} />
+                  現在地をスタートラインに設定 (GPS)
+                </button>
+              )}
               
               <button 
                 onClick={startMeasurement}
