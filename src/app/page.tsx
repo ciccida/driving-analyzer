@@ -736,32 +736,19 @@ export default function Home() {
           <p className="text-sm text-pink-400 font-bold mt-2">/ 100 pt</p>
         </div>
 
-        <div className="w-full mb-6">
-          <div className="bg-gray-900 rounded-2xl p-4 border border-gray-800">
-            <h4 className="font-bold text-white mb-4 text-center">GGダイアグラム (分析)</h4>
-            
-            {/* Lap Selector */}
-            {lapResults.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
-                <button
-                  onClick={() => setSelectedLapIndex('ALL')}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap ${selectedLapIndex === 'ALL' ? 'bg-pink-600 text-white' : 'bg-gray-800 text-gray-400'}`}
-                >
-                  ALL LAPS
-                </button>
-                {lapResults.map(r => (
-                  <button
-                    key={r.index}
-                    onClick={() => setSelectedLapIndex(r.index)}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap ${selectedLapIndex === r.index ? 'bg-pink-600 text-white' : 'bg-gray-800 text-gray-400'}`}
-                  >
-                    Lap {r.index}
-                  </button>
-                ))}
-              </div>
-            )}
-            
-            <ResultGGDiagram data={selectedLapIndex === 'ALL' ? historyRef.current : lapResults.find(r => r.index === selectedLapIndex)?.data || []} />
+        <div className="space-y-4 mb-8">
+          <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
+            <h4 className="font-bold mb-2 flex items-center gap-2 text-white">
+              <CheckCircle2 size={18} className="text-pink-500" />
+              AI フィードバック
+            </h4>
+            <p className="text-sm text-gray-300 leading-relaxed">
+              {jerkScore === -1 
+                ? "走行データが不足しているため、アドバイスを生成できません。実際に走行を行ってから再度お試しください。" 
+                : mode === "Street" 
+                  ? jerkScore > 80 ? "非常にスムーズな運転です。同乗者も快適に過ごせる素晴らしいペダルワーク・ステアリング操作です。" : "少し加減速のG変化（ジャーク）が大きめです。もう少しブレーキのリリースをゆっくり行うとよりスムーズになります。"
+                  : "荷重移動のメリハリはありますが、旋回中のGの変動が見られます。ステアリングの切り足しやアクセルのオンオフを減らし、一定の定常円旋回を意識しましょう。"}
+            </p>
           </div>
         </div>
 
@@ -805,19 +792,32 @@ export default function Home() {
           </div>
         )}
 
-        <div className="space-y-4 mb-8">
-          <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <h4 className="font-bold mb-2 flex items-center gap-2 text-white">
-              <CheckCircle2 size={18} className="text-pink-500" />
-              AI フィードバック
-            </h4>
-            <p className="text-sm text-gray-300 leading-relaxed">
-              {jerkScore === -1 
-                ? "走行データが不足しているため、アドバイスを生成できません。実際に走行を行ってから再度お試しください。" 
-                : mode === "Street" 
-                  ? jerkScore > 80 ? "非常にスムーズな運転です。同乗者も快適に過ごせる素晴らしいペダルワーク・ステアリング操作です。" : "少し加減速のG変化（ジャーク）が大きめです。もう少しブレーキのリリースをゆっくり行うとよりスムーズになります。"
-                  : "荷重移動のメリハリはありますが、旋回中のGの変動が見られます。ステアリングの切り足しやアクセルのオンオフを減らし、一定の定常円旋回を意識しましょう。"}
-            </p>
+        <div className="w-full mb-6">
+          <div className="bg-gray-900 rounded-2xl p-4 border border-gray-800">
+            <h4 className="font-bold text-white mb-4 text-center">GGダイアグラム (分析)</h4>
+            
+            {/* Lap Selector */}
+            {lapResults.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
+                <button
+                  onClick={() => setSelectedLapIndex('ALL')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap ${selectedLapIndex === 'ALL' ? 'bg-pink-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                >
+                  ALL LAPS
+                </button>
+                {lapResults.map(r => (
+                  <button
+                    key={r.index}
+                    onClick={() => setSelectedLapIndex(r.index)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap ${selectedLapIndex === r.index ? 'bg-pink-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                  >
+                    Lap {r.index}
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            <ResultGGDiagram data={selectedLapIndex === 'ALL' ? historyRef.current : lapResults.find(r => r.index === selectedLapIndex)?.data || []} />
           </div>
         </div>
 
