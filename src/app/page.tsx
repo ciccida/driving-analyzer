@@ -62,6 +62,9 @@ export default function Home() {
 
   // Result state
   const [jerkScore, setJerkScore] = useState(0);
+  const [lapResults, setLapResults] = useState<any[]>([]);
+  const [selectedLapIndex, setSelectedLapIndex] = useState<number | 'ALL'>('ALL');
+  const lapIndicesRef = useRef<number[]>([]);
 
   // ----------------------------------------------------------------------
   // Setup & Permissions
