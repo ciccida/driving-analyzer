@@ -139,6 +139,7 @@ export default function Home() {
     const now = triggerTime || Date.now();
     if (lapStartTime === null) {
       setLapStartTime(now);
+      lapIndicesRef.current.push(historyRef.current.length);
     } else {
       const lapTime = now - lapStartTime;
       setLastLapTime(lapTime);
@@ -200,6 +201,7 @@ export default function Home() {
     setLastLapTime(null);
     setBestLapTime(null);
     setLaps([]);
+    lapIndicesRef.current = [0];
   };
 
   // ----------------------------------------------------------------------
@@ -376,66 +378,135 @@ export default function Home() {
     const history = historyRef.current;
     if (history.length < 2) return;
 
-    let jerkPenalty = 0;
-    let highGCount = 0;
-    let totalGSum = 0;
-    let movingTime = 0;
+    const calcScoreAndMaxG = (data: typeof historyRef.current) => {
+      let jerkPenalty = 0;
+      let highGCount = 0;
+      let totalGSum = 0;
+      let movingTime = 0;
+      let maxG = 0;
 
-    for (let i = 1; i < history.length; i++) {
-      const p1 = history[i - 1];
-      const p2 = history[i];
-      const dt = (p2.time - p1.time) / 1000; // seconds
+      for (let i = 1; i < data.length; i++) {
+        const p1 = data[i - 1];
+        const p2 = data[i];
+        const dt = (p2.time - p1.time) / 1000;
 
-      if (dt > 0) {
-        const currentG = Math.sqrt(p2.x ** 2 + p2.y ** 2);
-        
-        // Only consider as moving if G is above noise threshold
-        if (currentG > 0.05) {
-          movingTime += dt;
-        }
+        if (dt > 0) {
+          const currentG = Math.sqrt(p2.x ** 2 + p2.y ** 2);
+          if (currentG > maxG) maxG = currentG;
+          
+          if (currentG > 0.05) {
+            movingTime += dt;
+          }
 
-        const dG = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-        const jerk = dG / dt;
-        
-        // Accumulate penalty for rough movements (jerk > 0.8 G/s is a sharp change)
-        if (jerk > 0.8) {
-          jerkPenalty += (jerk - 0.8) * dt;
-        }
+          const dG = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+          const jerk = dG / dt;
+          
+          if (jerk > 0.8) {
+            jerkPenalty += (jerk - 0.8) * dt;
+          }
 
-        if (currentG > 0.5) {
-          highGCount++;
-          totalGSum += currentG;
+          if (currentG > 0.5) {
+            highGCount++;
+            totalGSum += currentG;
+          }
         }
       }
-    }
-    
-    // Check if there was sufficient movement
-    if (movingTime < 1.0) { // Less than 1 second of actual moving data
-      setJerkScore(-1); // Use -1 to indicate insufficient data
-      return;
-    }
-    
-    let score = 100;
+      
+      if (movingTime < 1.0) {
+        return { score: -1, maxG };
+      }
+      
+      let score = 100;
+      if (mode === "Street") {
+        score = 100 - (jerkPenalty * 15);
+      } else {
+        const avgHighG = highGCount > 0 ? totalGSum / highGCount : 0;
+        const gBonus = Math.min(30, avgHighG * 20); 
+        score = 70 + gBonus - (jerkPenalty * 5);
+      }
 
-    if (mode === "Street") {
-      // Street mode heavily penalizes sudden G changes (shakes)
-      // Normal cruising or gentle braking causes NO penalty (starts at 100)
-      score = 100 - (jerkPenalty * 15);
-    } else {
-      // Track mode: Rewards high G usage but penalizes rough handling
-      // Base score 70, add up to 30 for high G, subtract for jerk
-      const avgHighG = highGCount > 0 ? totalGSum / highGCount : 0;
-      const gBonus = Math.min(30, avgHighG * 20); 
-      score = 70 + gBonus - (jerkPenalty * 5);
-    }
+      return { score: Math.max(0, Math.min(100, Math.round(score))), maxG };
+    };
 
-    setJerkScore(Math.max(0, Math.min(100, Math.round(score))));
+    // Overall calculation
+    const overall = calcScoreAndMaxG(history);
+    setJerkScore(overall.score);
+
+    // Per-lap calculations
+    const results = [];
+    for (let i = 0; i < laps.length; i++) {
+      const start = lapIndicesRef.current[i] || 0;
+      const end = lapIndicesRef.current[i + 1] || history.length;
+      const lapData = history.slice(start, end);
+      const res = calcScoreAndMaxG(lapData);
+      
+      results.push({
+        index: i + 1,
+        time: laps[i],
+        score: res.score,
+        maxG: res.maxG,
+        data: lapData
+      });
+    }
+    setLapResults(results);
+    setSelectedLapIndex('ALL');
   };
 
 
   // ----------------------------------------------------------------------
   // Render
   // ----------------------------------------------------------------------
+
+  // ----------------------------------------------------------------------
+  // Result GG Diagram Component
+  // ----------------------------------------------------------------------
+  const ResultGGDiagram = ({ data }: { data: typeof historyRef.current }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      
+      const width = canvas.width;
+      const height = canvas.height;
+      const radius = width / 2;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const scaleG = trackScale; // max G
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw Grid
+      ctx.strokeStyle = "rgba(255,255,255,0.1)";
+      ctx.lineWidth = 1;
+      
+      // Circles
+      [0.5, 1.0, 1.5, 2.0].forEach(g => {
+        if (g <= scaleG) {
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, (g / scaleG) * radius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      });
+      
+      // Heatmap drawing (scatter points)
+      if (data.length === 0) return;
+      
+      ctx.fillStyle = "rgba(232, 0, 107, 0.4)";
+      data.forEach(point => {
+         const px = centerX + (point.x / scaleG) * radius;
+         const py = centerY - (point.y / scaleG) * radius;
+         ctx.beginPath();
+         ctx.arc(px, py, 2, 0, Math.PI * 2);
+         ctx.fill();
+      });
+      
+    }, [data]);
+    
+    return <canvas ref={canvasRef} width={280} height={280} className="rounded-full bg-gray-900/50 shadow-inner mx-auto mb-4" />;
+  };
+
   if (viewState === "setup") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-6 max-w-md mx-auto space-y-8">
@@ -662,6 +733,75 @@ export default function Home() {
           <p className="text-sm text-pink-400 font-bold mt-2">/ 100 pt</p>
         </div>
 
+        <div className="w-full mb-6">
+          <div className="bg-gray-900 rounded-2xl p-4 border border-gray-800">
+            <h4 className="font-bold text-white mb-4 text-center">GGダイアグラム (分析)</h4>
+            
+            {/* Lap Selector */}
+            {lapResults.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
+                <button
+                  onClick={() => setSelectedLapIndex('ALL')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap ${selectedLapIndex === 'ALL' ? 'bg-pink-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                >
+                  ALL LAPS
+                </button>
+                {lapResults.map(r => (
+                  <button
+                    key={r.index}
+                    onClick={() => setSelectedLapIndex(r.index)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap ${selectedLapIndex === r.index ? 'bg-pink-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                  >
+                    Lap {r.index}
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            <ResultGGDiagram data={selectedLapIndex === 'ALL' ? historyRef.current : lapResults.find(r => r.index === selectedLapIndex)?.data || []} />
+          </div>
+        </div>
+
+        {lapResults.length > 0 && (
+          <div className="w-full bg-gray-900 rounded-2xl p-4 border border-gray-800 mb-6">
+            <h4 className="font-bold text-white mb-3 flex justify-between items-center">
+              <span>ラップ別データ</span>
+              <span className="text-xs font-normal text-gray-400">BESTラップをタップで比較</span>
+            </h4>
+            <div className="overflow-hidden rounded-xl border border-gray-800">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-gray-950 text-gray-400 text-xs">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Lap</th>
+                    <th className="px-3 py-2 font-medium">Time</th>
+                    <th className="px-3 py-2 font-medium">Max G</th>
+                    <th className="px-3 py-2 font-medium text-right">Score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {lapResults.map(r => (
+                    <tr 
+                      key={r.index} 
+                      onClick={() => setSelectedLapIndex(r.index)}
+                      className={`cursor-pointer transition-colors ${selectedLapIndex === r.index ? 'bg-gray-800' : 'bg-gray-900/50 hover:bg-gray-800/50'}`}
+                    >
+                      <td className="px-3 py-2 font-mono text-gray-300">
+                        {r.index}
+                        {bestLapTime === r.time && <span className="ml-1 text-[10px] bg-pink-600 text-white px-1.5 py-0.5 rounded-full font-bold">BEST</span>}
+                      </td>
+                      <td className={`px-3 py-2 font-mono ${bestLapTime === r.time ? 'text-pink-400 font-bold' : 'text-gray-300'}`}>{formatTime(r.time)}</td>
+                      <td className="px-3 py-2 font-mono text-gray-400">{r.maxG.toFixed(2)}</td>
+                      <td className="px-3 py-2 font-mono text-right text-gray-300">
+                        {r.score === -1 ? "-" : r.score}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4 mb-8">
           <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
             <h4 className="font-bold mb-2 flex items-center gap-2 text-white">
@@ -669,35 +809,21 @@ export default function Home() {
               AI フィードバック
             </h4>
             <p className="text-sm text-gray-300 leading-relaxed">
-              {mode === "Street" 
-                ? jerkScore > 80 ? "非常にスムーズな運転です。同乗者も快適に過ごせる素晴らしいペダルワーク・ステアリング操作です。" : "少し加減速のG変化（ジャーク）が大きめです。もう少しブレーキのリリースをゆっくり行うとよりスムーズになります。"
-                : "荷重移動のメリハリはありますが、旋回中のGの変動が見られます。ステアリングの切り足しやアクセルのオンオフを減らし、一定の定常円旋回を意識しましょう。"}
+              {jerkScore === -1 
+                ? "走行データが不足しているため、アドバイスを生成できません。実際に走行を行ってから再度お試しください。" 
+                : mode === "Street" 
+                  ? jerkScore > 80 ? "非常にスムーズな運転です。同乗者も快適に過ごせる素晴らしいペダルワーク・ステアリング操作です。" : "少し加減速のG変化（ジャーク）が大きめです。もう少しブレーキのリリースをゆっくり行うとよりスムーズになります。"
+                  : "荷重移動のメリハリはありますが、旋回中のGの変動が見られます。ステアリングの切り足しやアクセルのオンオフを減らし、一定の定常円旋回を意識しましょう。"}
             </p>
           </div>
         </div>
 
-        <div className="mt-auto space-y-4">
-          <div className="bg-pink-900/20 border border-pink-600/50 rounded-2xl p-5 text-center shadow-[0_0_15px_rgba(219,39,119,0.2)]">
-            <p className="text-sm text-pink-100 font-medium leading-relaxed mb-3">
-              アライメント調整や足回りのセッティングの<br />ご相談は下記リンクからぜひ！
-            </p>
-            <a 
-              href="https://cruise-power.co.jp/" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="inline-block w-full bg-pink-600 hover:bg-pink-500 text-white font-bold py-3 rounded-xl transition-colors"
-            >
-              CRUISE 公式サイトへ
-            </a>
-          </div>
-
-          <button 
-            onClick={() => setViewState("setup")}
-            className="w-full bg-gray-800 hover:bg-gray-700 py-4 rounded-xl font-bold text-white transition-colors"
-          >
-            トップに戻る
-          </button>
-        </div>
+        <button 
+          onClick={() => setViewState("setup")}
+          className="w-full bg-gray-800 hover:bg-gray-700 py-4 rounded-xl font-bold transition-colors shadow-lg text-white"
+        >
+          ホームへ戻る
+        </button>
       </div>
     );
   }
