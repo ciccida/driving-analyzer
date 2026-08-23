@@ -13,7 +13,7 @@ interface GDataPoint {
   time: number;
 }
 
-const LOW_PASS_ALPHA = 0.2; // Smoothing factor for low-pass filter
+const LOW_PASS_ALPHA = 0.1; // Smoothing factor for low-pass filter
 
 export default function Home() {
   const [viewState, setViewState] = useState<ViewState>("setup");
@@ -24,6 +24,8 @@ export default function Home() {
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [gravity, setGravity] = useState({ x: 0, y: 0, z: 9.8 }); // 3D gravity vector
   const [gData, setGData] = useState<GDataPoint[]>([]);
+  const wakeLockRef = useRef<any>(null);
+
   
   // ラップタイマー用のステート
   const [lapStartTime, setLapStartTime] = useState<number | null>(null);
@@ -113,6 +115,10 @@ export default function Home() {
   };
 
   const stopMeasurement = () => {
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(console.error);
+      wakeLockRef.current = null;
+    }
     setViewState("result");
     setLapStartTime(null);
     calculateResult();
@@ -184,6 +190,11 @@ export default function Home() {
     historyRef.current = [];
     setMaxG(0);
     setViewState("measuring");
+    if ('wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').then(lock => {
+        wakeLockRef.current = lock;
+      }).catch(err => console.error(err));
+    }
     setLapStartTime(null);
     setCurrentLapTime(0);
     setLastLapTime(null);
@@ -368,6 +379,7 @@ export default function Home() {
     let jerkPenalty = 0;
     let highGCount = 0;
     let totalGSum = 0;
+    let movingTime = 0;
 
     for (let i = 1; i < history.length; i++) {
       const p1 = history[i - 1];
@@ -375,15 +387,21 @@ export default function Home() {
       const dt = (p2.time - p1.time) / 1000; // seconds
 
       if (dt > 0) {
+        const currentG = Math.sqrt(p2.x ** 2 + p2.y ** 2);
+        
+        // Only consider as moving if G is above noise threshold
+        if (currentG > 0.05) {
+          movingTime += dt;
+        }
+
         const dG = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
         const jerk = dG / dt;
         
-        // Accumulate penalty for rough movements (jerk > 0.5 G/s)
-        if (jerk > 0.5) {
-          jerkPenalty += (jerk - 0.5) * dt;
+        // Accumulate penalty for rough movements (jerk > 0.8 G/s is a sharp change)
+        if (jerk > 0.8) {
+          jerkPenalty += (jerk - 0.8) * dt;
         }
 
-        const currentG = Math.sqrt(p2.x ** 2 + p2.y ** 2);
         if (currentG > 0.5) {
           highGCount++;
           totalGSum += currentG;
@@ -391,11 +409,17 @@ export default function Home() {
       }
     }
     
+    // Check if there was sufficient movement
+    if (movingTime < 1.0) { // Less than 1 second of actual moving data
+      setJerkScore(-1); // Use -1 to indicate insufficient data
+      return;
+    }
+    
     let score = 100;
 
     if (mode === "Street") {
       // Street mode heavily penalizes sudden G changes (shakes)
-      // 1 penalty point per 1.0 accumulated jerk penalty
+      // Normal cruising or gentle braking causes NO penalty (starts at 100)
       score = 100 - (jerkPenalty * 15);
     } else {
       // Track mode: Rewards high G usage but penalizes rough handling
@@ -628,10 +652,13 @@ export default function Home() {
             <div className="flex flex-col items-center">
               <h3 className="text-gray-400 text-sm font-bold uppercase tracking-wider mb-1">総合スコア</h3>
               <div className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-pink-200">
-                {jerkScore}
+                {jerkScore === -1 ? "-" : jerkScore}
               </div>
             </div>
           </div>
+          {jerkScore === -1 && (
+            <div className="text-sm text-red-400 mt-2 font-bold">走行データが不足しています（停車中など）</div>
+          )}
           <p className="text-sm text-pink-400 font-bold mt-2">/ 100 pt</p>
         </div>
 
