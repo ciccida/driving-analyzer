@@ -13,7 +13,7 @@ interface GDataPoint {
   time: number;
 }
 
-const LOW_PASS_ALPHA = 0.1; // Smoothing factor for low-pass filter
+const LOW_PASS_ALPHA = 0.06; // Smoothing factor for low-pass filter
 
 export default function Home() {
   const [viewState, setViewState] = useState<ViewState>("setup");
@@ -382,50 +382,104 @@ export default function Home() {
     if (history.length < 2) return;
 
     const calcScoreAndMaxG = (data: typeof historyRef.current) => {
-      let jerkPenalty = 0;
-      let highGCount = 0;
-      let totalGSum = 0;
       let movingTime = 0;
       let maxG = 0;
 
+      let smoothTime = 0;
+      let bonusTime = 0;
+      let penaltyEvents = 0;
+      let isPenaltyCooldown = false;
+      let penaltyCooldownTimer = 0;
+
+      let jerkPenaltyTrack = 0;
+      let highGCountTrack = 0;
+      let totalGSumTrack = 0;
+
+      const applyDeadzone = (v: number) => Math.abs(v) < 0.03 ? 0 : v;
+
       for (let i = 1; i < data.length; i++) {
-        const p1 = data[i - 1];
-        const p2 = data[i];
-        const dt = (p2.time - p1.time) / 1000;
+        const pCurrent = data[i];
+        
+        const cx = applyDeadzone(pCurrent.x);
+        const cy = applyDeadzone(pCurrent.y);
+        const currentG = Math.sqrt(cx**2 + cy**2);
+        
+        if (currentG > maxG) maxG = currentG;
 
-        if (dt > 0) {
-          const currentG = Math.sqrt(p2.x ** 2 + p2.y ** 2);
-          if (currentG > maxG) maxG = currentG;
-          
-          if (currentG > 0.05) {
-            movingTime += dt;
-          }
+        const dt = (pCurrent.time - data[i - 1].time) / 1000;
+        if (dt <= 0) continue;
 
-          const dG = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-          const jerk = dG / dt;
-          
-          if (jerk > 0.8) {
-            jerkPenalty += (jerk - 0.8) * dt;
-          }
+        if (currentG > 0.05) {
+          movingTime += dt;
+        }
 
-          if (currentG > 0.5) {
-            highGCount++;
-            totalGSum += currentG;
+        // Rolling window for Jerk (look back ~0.4s)
+        let lookbackIdx = i - 1;
+        while (lookbackIdx > 0 && (pCurrent.time - data[lookbackIdx].time) < 400) {
+          lookbackIdx--;
+        }
+        
+        const pPast = data[lookbackIdx];
+        const dtJerk = (pCurrent.time - pPast.time) / 1000;
+        
+        let jerk = 0;
+        if (dtJerk > 0) {
+          const px = applyDeadzone(pPast.x);
+          const py = applyDeadzone(pPast.y);
+          const dG = Math.sqrt((cx - px)**2 + (cy - py)**2);
+          jerk = dG / dtJerk;
+        }
+
+        // --- Street Mode Logic ---
+        if (currentG > 0.05) {
+          if (jerk < 0.25) {
+            smoothTime += dt;
           }
+          if (currentG >= 0.05 && currentG <= 0.3 && jerk < 0.15) {
+            bonusTime += dt;
+          }
+        }
+
+        if (jerk > 0.4) {
+          if (!isPenaltyCooldown) {
+            penaltyEvents++;
+            isPenaltyCooldown = true;
+            penaltyCooldownTimer = pCurrent.time;
+          }
+        }
+        if (isPenaltyCooldown && (pCurrent.time - penaltyCooldownTimer > 1000)) {
+          isPenaltyCooldown = false;
+        }
+
+        // --- Track Mode Logic ---
+        if (jerk > 0.8) {
+          jerkPenaltyTrack += (jerk - 0.8) * dt;
+        }
+        if (currentG > 0.5) {
+          highGCountTrack++;
+          totalGSumTrack += currentG;
         }
       }
       
-      if (movingTime < 1.0) {
+      if (maxG < 0.15 || movingTime < 10.0) {
         return { score: -1, maxG };
       }
       
       let score = 100;
       if (mode === "Street") {
-        score = 100 - (jerkPenalty * 15);
+        const smoothRatio = movingTime > 0 ? (smoothTime / movingTime) : 0;
+        const baseScore = 75 * smoothRatio; // Up to 75 base
+        
+        const bonusRatio = movingTime > 0 ? (bonusTime / movingTime) : 0;
+        const bonusScore = Math.min(25, (bonusRatio / 0.3) * 25); // Up to 25 bonus
+        
+        const penalties = penaltyEvents * 4;
+        
+        score = baseScore + bonusScore - penalties;
       } else {
-        const avgHighG = highGCount > 0 ? totalGSum / highGCount : 0;
+        const avgHighG = highGCountTrack > 0 ? totalGSumTrack / highGCountTrack : 0;
         const gBonus = Math.min(30, avgHighG * 20); 
-        score = 70 + gBonus - (jerkPenalty * 5);
+        score = 70 + gBonus - (jerkPenaltyTrack * 5);
       }
 
       return { score: Math.max(0, Math.min(100, Math.round(score))), maxG };
@@ -744,7 +798,7 @@ export default function Home() {
             </h4>
             <p className="text-sm text-gray-300 leading-relaxed">
               {jerkScore === -1 
-                ? "走行データが不足しているため、アドバイスを生成できません。実際に走行を行ってから再度お試しください。" 
+                ? "走行データが不足しています。実際に走行してから診断してください。" 
                 : mode === "Street" 
                   ? jerkScore > 80 ? "非常にスムーズな運転です。同乗者も快適に過ごせる素晴らしいペダルワーク・ステアリング操作です。" : "少し加減速のG変化（ジャーク）が大きめです。もう少しブレーキのリリースをゆっくり行うとよりスムーズになります。"
                   : "荷重移動のメリハリはありますが、旋回中のGの変動が見られます。ステアリングの切り足しやアクセルのオンオフを減らし、一定の定常円旋回を意識しましょう。"}
