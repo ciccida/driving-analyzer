@@ -62,6 +62,8 @@ export default function Home() {
 
   // Result state
   const [jerkScore, setJerkScore] = useState(0);
+  const [aiFeatures, setAiFeatures] = useState<any>(null);
+  const [aiFeedback, setAiFeedback] = useState<string>("");
   const [lapResults, setLapResults] = useState<any[]>([]);
   const [selectedLapIndex, setSelectedLapIndex] = useState<number | 'ALL'>('ALL');
   const lapIndicesRef = useRef<number[]>([]);
@@ -377,6 +379,48 @@ export default function Home() {
   // ----------------------------------------------------------------------
   // Result Calculation
   // ----------------------------------------------------------------------
+  const generateProceduralAdvice = (features: any) => {
+    let review = "";
+    if (features.score >= 90) review = "非常に丁寧で完成されたドライビングです。素晴らしい荷重コントロールです。";
+    else if (features.score >= 75) review = "全体的にスムーズな操作ができていますが、一部でGの変動が見られます。";
+    else review = "操作が急になっており、車体や同乗者に負担がかかる走りになっています。";
+
+    let goodPoints = [];
+    if (features.smoothRatio > 0.8) goodPoints.push("走行中の荷重変化が非常に滑らかに保たれています。");
+    if (features.steadyCorneringTime > 2.0) goodPoints.push("旋回中のGが安定しており、綺麗な定常円旋回が維持できています。");
+    if (features.lateBrakeReleaseCount === 0) goodPoints.push("停止直前のブレーキの抜き取りが完璧で、カックンブレーキがありません。");
+    if (goodPoints.length === 0) goodPoints.push("一定の速度を維持しようとする意識は見られます。");
+
+    let badPoints = [];
+    if (features.hardBrakeCount > 0) badPoints.push(`急ブレーキが ${features.hardBrakeCount} 回検出されました。さらに手前からブレーキを優しく踏み始めましょう。`);
+    if (features.sharpSteeringCount > 0) badPoints.push(`急なステアリング操作が ${features.sharpSteeringCount} 回ありました。コーナー手前での減速を終わらせ、ゆっくり切り込みましょう。`);
+    if (features.lateBrakeReleaseCount > 0) badPoints.push(`停止時のブレーキ残し（カックンブレーキ）が ${features.lateBrakeReleaseCount} 回あります。停止する瞬間にペダルを数ミリ戻す意識を持ちましょう。`);
+    if (badPoints.length === 0) badPoints.push("大きな減点イベントはありませんが、さらにミリ単位のペダルワークを極めましょう。");
+
+    let setupAdvice = "";
+    if (features.mode === "Track") {
+      setupAdvice = "高いG領域を使えています。タイヤの空気圧を高めにセットするか、キャンバー角の見直しでさらにグリップを引き出せます。";
+    } else {
+      if (features.hardBrakeCount > 2) setupAdvice = "フロントタイヤへの負担が大きい走りです。フロントの空気圧を少し高めにするか、サスの減衰を少し硬めにするとノーズダイブが抑えられます。";
+      else if (features.sharpSteeringCount > 2) setupAdvice = "ステアリングの反応が過敏になっています。アライメント（トー）がアウトに振れている可能性があるので確認をおすすめします。";
+      else setupAdvice = "現在の走りは車にとても優しいです。このままの足回りセッティングで心地よいドライブをお楽しみください。";
+    }
+
+    const aiText = `【総評】
+${review}
+
+【良かったポイント】
+${goodPoints.join(" ")}
+
+【減点理由と改善のコツ】
+${badPoints.join(" ")}
+
+【愛車・セッティングへの一言】
+${setupAdvice}`;
+    
+    setAiFeedback(aiText);
+  };
+
   const calculateResult = () => {
     const history = historyRef.current;
     if (history.length < 2) return;
@@ -394,6 +438,12 @@ export default function Home() {
       let jerkPenaltyTrack = 0;
       let highGCountTrack = 0;
       let totalGSumTrack = 0;
+
+      // Advanced features for AI
+      let hardBrakeCount = 0;
+      let sharpSteeringCount = 0;
+      let lateBrakeReleaseCount = 0;
+      let steadyCorneringTime = 0;
 
       const applyDeadzone = (v: number) => Math.abs(v) < 0.03 ? 0 : v;
 
@@ -413,7 +463,6 @@ export default function Home() {
           movingTime += dt;
         }
 
-        // Rolling window for Jerk (look back ~0.4s)
         let lookbackIdx = i - 1;
         while (lookbackIdx > 0 && (pCurrent.time - data[lookbackIdx].time) < 400) {
           lookbackIdx--;
@@ -423,38 +472,45 @@ export default function Home() {
         const dtJerk = (pCurrent.time - pPast.time) / 1000;
         
         let jerk = 0;
+        let jerkX = 0;
+        let jerkY = 0;
         if (dtJerk > 0) {
           const px = applyDeadzone(pPast.x);
           const py = applyDeadzone(pPast.y);
+          jerkX = Math.abs(cx - px) / dtJerk;
+          jerkY = Math.abs(cy - py) / dtJerk;
           const dG = Math.sqrt((cx - px)**2 + (cy - py)**2);
           jerk = dG / dtJerk;
         }
 
-        // --- Street Mode Logic ---
+        // Feature detection
         if (currentG > 0.05) {
-          if (jerk < 0.25) {
-            smoothTime += dt;
-          }
-          if (currentG >= 0.05 && currentG <= 0.3 && jerk < 0.15) {
-            bonusTime += dt;
+          if (jerk < 0.25) smoothTime += dt;
+          if (currentG >= 0.05 && currentG <= 0.3 && jerk < 0.15) bonusTime += dt;
+          
+          if (Math.abs(cx) > 0.1 && Math.abs(cx) < 0.25 && jerkX < 0.1) {
+            steadyCorneringTime += dt;
           }
         }
 
-        if (jerk > 0.4) {
-          if (!isPenaltyCooldown) {
-            penaltyEvents++;
-            isPenaltyCooldown = true;
-            penaltyCooldownTimer = pCurrent.time;
-          }
+        if (jerk > 0.4 && !isPenaltyCooldown) {
+          penaltyEvents++;
+          if (jerkY > 0.3 && cy > 0) hardBrakeCount++;
+          else if (jerkX > 0.3) sharpSteeringCount++;
+          
+          isPenaltyCooldown = true;
+          penaltyCooldownTimer = pCurrent.time;
         }
         if (isPenaltyCooldown && (pCurrent.time - penaltyCooldownTimer > 1000)) {
           isPenaltyCooldown = false;
         }
 
-        // --- Track Mode Logic ---
-        if (jerk > 0.8) {
-          jerkPenaltyTrack += (jerk - 0.8) * dt;
+        // Late brake release check (stopping with high G)
+        if (currentG < 0.05 && pPast.y > 0.1) {
+          lateBrakeReleaseCount++;
         }
+
+        if (jerk > 0.8) jerkPenaltyTrack += (jerk - 0.8) * dt;
         if (currentG > 0.5) {
           highGCountTrack++;
           totalGSumTrack += currentG;
@@ -468,13 +524,10 @@ export default function Home() {
       let score = 100;
       if (mode === "Street") {
         const smoothRatio = movingTime > 0 ? (smoothTime / movingTime) : 0;
-        const baseScore = 75 * smoothRatio; // Up to 75 base
-        
+        const baseScore = 75 * smoothRatio;
         const bonusRatio = movingTime > 0 ? (bonusTime / movingTime) : 0;
-        const bonusScore = Math.min(25, (bonusRatio / 0.3) * 25); // Up to 25 bonus
-        
+        const bonusScore = Math.min(25, (bonusRatio / 0.3) * 25);
         const penalties = penaltyEvents * 4;
-        
         score = baseScore + bonusScore - penalties;
       } else {
         const avgHighG = highGCountTrack > 0 ? totalGSumTrack / highGCountTrack : 0;
@@ -482,21 +535,46 @@ export default function Home() {
         score = 70 + gBonus - (jerkPenaltyTrack * 5);
       }
 
-      return { score: Math.max(0, Math.min(100, Math.round(score))), maxG };
+      return { 
+        score: Math.max(0, Math.min(100, Math.round(score))), 
+        maxG, 
+        movingTime, 
+        smoothTime, 
+        hardBrakeCount, 
+        sharpSteeringCount, 
+        lateBrakeReleaseCount, 
+        steadyCorneringTime 
+      };
     };
 
-    // Overall calculation
     const overall = calcScoreAndMaxG(history);
     setJerkScore(overall.score);
 
-    // Per-lap calculations
+    if (overall.score !== -1) {
+      const features = {
+        mode,
+        movingTime: overall.movingTime,
+        maxG: overall.maxG,
+        score: overall.score,
+        hardBrakeCount: overall.hardBrakeCount,
+        sharpSteeringCount: overall.sharpSteeringCount,
+        lateBrakeReleaseCount: overall.lateBrakeReleaseCount,
+        steadyCorneringTime: overall.steadyCorneringTime,
+        smoothRatio: (overall.movingTime ?? 0) > 0 ? (overall.smoothTime ?? 0) / (overall.movingTime ?? 1) : 0
+      };
+      setAiFeatures(features);
+      generateProceduralAdvice(features);
+    } else {
+      setAiFeatures(null);
+      setAiFeedback("走行データが不足しています。実際に走行してから診断してください。");
+    }
+
     const results = [];
     for (let i = 0; i < laps.length; i++) {
       const start = lapIndicesRef.current[i] || 0;
       const end = lapIndicesRef.current[i + 1] || history.length;
       const lapData = history.slice(start, end);
       const res = calcScoreAndMaxG(lapData);
-      
       results.push({
         index: i + 1,
         time: laps[i],
@@ -796,13 +874,20 @@ export default function Home() {
               <CheckCircle2 size={18} className="text-pink-500" />
               AI フィードバック
             </h4>
-            <p className="text-sm text-gray-300 leading-relaxed">
-              {jerkScore === -1 
-                ? "走行データが不足しています。実際に走行してから診断してください。" 
-                : mode === "Street" 
-                  ? jerkScore > 80 ? "非常にスムーズな運転です。同乗者も快適に過ごせる素晴らしいペダルワーク・ステアリング操作です。" : "少し加減速のG変化（ジャーク）が大きめです。もう少しブレーキのリリースをゆっくり行うとよりスムーズになります。"
-                  : "荷重移動のメリハリはありますが、旋回中のGの変動が見られます。ステアリングの切り足しやアクセルのオンオフを減らし、一定の定常円旋回を意識しましょう。"}
-            </p>
+            <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+              {aiFeedback || "走行データが不足しています。実際に走行してから診断してください。"}
+            </div>
+            {aiFeatures && (
+              <div className="mt-4 p-3 bg-gray-950 rounded-xl border border-gray-800">
+                <p className="text-xs text-gray-500 mb-2">💡AIへ送信した抽出データ（デバッグ表示）</p>
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono text-gray-400">
+                  <div>急ブレーキ: {aiFeatures.hardBrakeCount}回</div>
+                  <div>急ハンドル: {aiFeatures.sharpSteeringCount}回</div>
+                  <div>カックン停止: {aiFeatures.lateBrakeReleaseCount}回</div>
+                  <div>定速旋回: {aiFeatures.steadyCorneringTime.toFixed(1)}秒</div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
