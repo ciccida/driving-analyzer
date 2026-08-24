@@ -380,43 +380,60 @@ export default function Home() {
   // Result Calculation
   // ----------------------------------------------------------------------
   const generateProceduralAdvice = (features: any) => {
+    // Helper to pick random item from array
+    const sample = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+
     let review = "";
-    if (features.score >= 90) review = "非常に丁寧で完成されたドライビングです。素晴らしい荷重コントロールです。";
-    else if (features.score >= 75) review = "全体的にスムーズな操作ができていますが、一部でGの変動が見られます。";
-    else review = "操作が急になっており、車体や同乗者に負担がかかる走りになっています。";
+    if (features.score >= 90) review = sample([
+      "非常に丁寧で完成されたドライビングです。素晴らしい荷重コントロールです。",
+      "プロレベルの極めてスムーズなペダルワークです。無駄な挙動が一切ありません。",
+      "Gの変動が極めて少なく、車体にも同乗者にも優しい完璧な走行です。"
+    ]);
+    else if (features.score >= 75) review = sample([
+      "全体的にスムーズな操作ができていますが、一部でGの変動が見られます。",
+      "安定した良い走りですが、要所で少し操作が急になる場面がありました。",
+      "基本は丁寧に操作できていますが、さらに滑らかさを追求できる余地があります。"
+    ]);
+    else review = sample([
+      "操作が急になっており、車体や同乗者に負担がかかる走りになっています。",
+      "加減速やステアリングのG変化が大きく、タイヤへの負担が大きい状態です。",
+      "少し荒い操作が目立ちます。各ペダルとハンドルの操作をよりゆっくり行う意識を持ちましょう。"
+    ]);
 
     let goodPoints = [];
-    if (features.smoothRatio > 0.8) goodPoints.push("走行中の荷重変化が非常に滑らかに保たれています。");
-    if (features.steadyCorneringTime > 2.0) goodPoints.push("旋回中のGが安定しており、綺麗な定常円旋回が維持できています。");
-    if (features.lateBrakeReleaseCount === 0) goodPoints.push("停止直前のブレーキの抜き取りが完璧で、カックンブレーキがありません。");
-    if (goodPoints.length === 0) goodPoints.push("一定の速度を維持しようとする意識は見られます。");
+    if (features.smoothRatio > 0.8) goodPoints.push(sample(["走行中の荷重変化が非常に滑らかに保たれています。", "基本となる加減速のG移動がとても丁寧です。"]));
+    if (features.steadyCorneringTime > 2.0) goodPoints.push(sample(["旋回中のGが安定しており、綺麗な定常円旋回が維持できています。", "コーナーでのステアリング舵角が一定に保たれており、美しいコーナリングです。"]));
+    if (features.lateBrakeReleaseCount === 0 && features.hardBrakeCount === 0) goodPoints.push(sample(["停止直前のブレーキの抜き取りが完璧で、不快なカックンブレーキがありません。", "ブレーキのリリースが非常に上手く、スーッと停止できています。"]));
+    if (goodPoints.length === 0) goodPoints.push(sample(["一定の速度を維持しようとする意識は見られます。", "直線でのアクセルワークは比較的安定しています。"]));
 
     let badPoints = [];
-    if (features.hardBrakeCount > 0) badPoints.push(`急ブレーキが ${features.hardBrakeCount} 回検出されました。さらに手前からブレーキを優しく踏み始めましょう。`);
-    if (features.sharpSteeringCount > 0) badPoints.push(`急なステアリング操作が ${features.sharpSteeringCount} 回ありました。コーナー手前での減速を終わらせ、ゆっくり切り込みましょう。`);
-    if (features.lateBrakeReleaseCount > 0) badPoints.push(`停止時のブレーキ残し（カックンブレーキ）が ${features.lateBrakeReleaseCount} 回あります。停止する瞬間にペダルを数ミリ戻す意識を持ちましょう。`);
-    if (badPoints.length === 0) badPoints.push("大きな減点イベントはありませんが、さらにミリ単位のペダルワークを極めましょう。");
+    if (features.hardBrakeCount > 0) badPoints.push(sample([`急ブレーキが ${features.hardBrakeCount} 回検出されました。さらに手前からブレーキを優しく踏み始めましょう。`, `${features.hardBrakeCount} 回の強いブレーキングがありました。同乗者の頭が前後に揺れないペダルワークを意識してください。`]));
+    if (features.sharpSteeringCount > 0) badPoints.push(sample([`急なステアリング操作が ${features.sharpSteeringCount} 回ありました。コーナー手前での減速を終わらせ、ゆっくり切り込みましょう。`, `${features.sharpSteeringCount} 回、ハンドルの切り足し・戻しが急な場面がありました。`]));
+    if (features.lateBrakeReleaseCount > 0) badPoints.push(sample([`停止時のブレーキ残し（カックンブレーキ）が ${features.lateBrakeReleaseCount} 回あります。停止する瞬間にペダルを数ミリ戻す意識を持ちましょう。`, `完全停止時にGが残っている場面が ${features.lateBrakeReleaseCount} 回ありました。スーッとGを抜くように停まると完璧です。`]));
+    if (badPoints.length === 0) badPoints.push(sample(["大きな減点イベントはありません。この調子でさらにミリ単位のペダルワークを極めましょう。", "安全で素晴らしい運転です。次はタイヤのグリップ変化を感じ取りながら走ってみてください。"]));
 
     let setupAdvice = "";
     if (features.mode === "Track") {
-      setupAdvice = "高いG領域を使えています。タイヤの空気圧を高めにセットするか、キャンバー角の見直しでさらにグリップを引き出せます。";
+      setupAdvice = sample([
+        "高いG領域を使えています。タイヤの空気圧を高めにセットするか、キャンバー角の見直しでさらにグリップを引き出せます。",
+        "サーキット走行に耐えうる足回りセッティング（車高調やアライメント）について、ぜひCRUISEにご相談ください！"
+      ]);
     } else {
-      if (features.hardBrakeCount > 2) setupAdvice = "フロントタイヤへの負担が大きい走りです。フロントの空気圧を少し高めにするか、サスの減衰を少し硬めにするとノーズダイブが抑えられます。";
-      else if (features.sharpSteeringCount > 2) setupAdvice = "ステアリングの反応が過敏になっています。アライメント（トー）がアウトに振れている可能性があるので確認をおすすめします。";
-      else setupAdvice = "現在の走りは車にとても優しいです。このままの足回りセッティングで心地よいドライブをお楽しみください。";
+      if (features.hardBrakeCount > 2) setupAdvice = sample([
+        "フロントタイヤへの負担が大きい走りです。フロントの空気圧を少し高めにするか、サスの減衰を少し硬めにするとノーズダイブが抑えられます。",
+        "ブレーキング時の姿勢変化が大きいため、ブレーキパッドの摩耗点検や、足回りのリフレッシュをおすすめします。"
+      ]);
+      else if (features.sharpSteeringCount > 2) setupAdvice = sample([
+        "ステアリングの反応が過敏になっています。アライメント（トー）がアウトに振れている可能性があるので確認をおすすめします。",
+        "コーナリング時のロールが気になりませんか？スタビライザーの強化やアライメント調整で劇的に改善する可能性があります。"
+      ]);
+      else setupAdvice = sample([
+        "現在の走りは車にとても優しいです。このままの足回りセッティングで心地よいドライブをお楽しみください。定期点検の際はお気軽にお越しください！",
+        "非常にスムーズな荷重移動です。もし「もっと路面のインフォメーションが欲しい」と感じたら、ブッシュ類の強化などをご提案可能です。"
+      ]);
     }
 
-    const aiText = `【総評】
-${review}
-
-【良かったポイント】
-${goodPoints.join(" ")}
-
-【減点理由と改善のコツ】
-${badPoints.join(" ")}
-
-【愛車・セッティングへの一言】
-${setupAdvice}`;
+    const aiText = `【総評】\n${review}\n\n【良かったポイント】\n${goodPoints.join(" ")}\n\n【減点理由と改善のコツ】\n${badPoints.join(" ")}\n\n【愛車・セッティングへの一言】\n${setupAdvice}`;
     
     setAiFeedback(aiText);
   };
