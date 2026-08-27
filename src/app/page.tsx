@@ -1,4 +1,5 @@
 "use client";
+import html2canvas from "html2canvas";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { AlertTriangle, Car, Flag, Play, Square, Settings, CheckCircle2, MapPin } from "lucide-react";
@@ -859,7 +860,10 @@ export default function Home() {
   if (viewState === "result") {
     return (
       <div className="flex flex-col min-h-screen p-6 max-w-md mx-auto">
-        <h2 className="text-2xl font-bold mb-6 text-center text-white">走行診断レポート</h2>
+        <div id="result-capture-area" className="flex flex-col gap-6 bg-black p-2 pb-6 -mx-2 px-2 rounded-3xl">
+          <div className="flex items-center justify-center gap-2 mb-2 pt-4">
+            <h2 className="text-2xl font-bold text-center text-white">走行診断レポート</h2>
+          </div>
         
         <div className="bg-gray-900 rounded-3xl p-6 mb-6 text-center border border-pink-900/50 relative overflow-hidden flex flex-col items-center">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 to-rose-500" />
@@ -975,6 +979,45 @@ export default function Home() {
             
             <ResultGGDiagram data={selectedLapIndex === 'ALL' ? historyRef.current : lapResults.find(r => r.index === selectedLapIndex)?.data || []} />
           </div>
+        </div>
+
+        </div>
+
+        <div className="flex flex-col gap-3 mb-6">
+          <button 
+            onClick={() => {
+              const traceRate = aiFeatures?.smoothRatio ? Math.round(aiFeatures.smoothRatio * 100) : 0;
+              const text = `【G-Smooth Driving Lab】今日の運転スムーズスコアは【${jerkScore}点】でした！摩擦円トレース率: ${traceRate}% #GSmooth #丁寧な荷重移動 #安全運転`;
+              const url = "https://driving-analyzer.vercel.app";
+              window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
+            }}
+            className="w-full bg-[#000000] border border-gray-700 hover:bg-gray-800 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-white"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="w-5 h-5 fill-current"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.005 3.869H5.078z"></path></svg>
+            Xで結果をシェア
+          </button>
+          
+          <button 
+            onClick={async () => {
+              const element = document.getElementById('result-capture-area');
+              if (!element) return;
+              try {
+                const canvas = await html2canvas(element, { backgroundColor: '#000000', scale: 2 });
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                const a = document.createElement('a');
+                a.href = dataUrl;
+                a.download = `G-Smooth_Result_${new Date().getTime()}.jpg`;
+                a.click();
+              } catch (e) {
+                console.error('Image generation failed', e);
+                alert('画像の生成に失敗しました');
+              }
+            }}
+            className="w-full bg-pink-600 hover:bg-pink-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-white"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            カルテ画像を保存
+          </button>
         </div>
 
         <button 

@@ -2,13 +2,26 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Driving Analyzer G-Meter',
-  description: 'スマホセンサー連動 荷重移動・ドライビング診断',
+  title: 'G-Smooth Driving Lab | 荷重移動・ドライビング診断',
+  description: 'スマホセンサー連動で荷重移動・摩擦円トレース率を診断。運転のスムーズさをAIが自動採点する無料Webアプリ。',
   manifest: '/manifest.json',
+  openGraph: {
+    title: 'G-Smooth Driving Lab | 荷重移動・ドライビング診断',
+    description: 'スマホのGセンサーを使って、あなたの運転スムーズさを採点・AI診断します！',
+    url: 'https://driving-analyzer.vercel.app',
+    siteName: 'G-Smooth Driving Lab',
+    locale: 'ja_JP',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'G-Smooth Driving Lab',
+    description: 'スマホのGセンサーを使って、あなたの運転スムーズさを採点・AI診断します！',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'G-Meter',
+    title: 'G-Smooth',
   },
 };
 
