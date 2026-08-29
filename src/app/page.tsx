@@ -981,15 +981,32 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Branding Footer for Screenshot */}
+        <div className="w-full bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 rounded-2xl p-4 border border-gray-700/50 mt-2 flex flex-col items-center justify-center text-center shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-pink-500 to-transparent opacity-70"></div>
+          <h4 className="text-white font-black tracking-widest text-lg mb-1 drop-shadow-md">
+            Produced by <span className="text-pink-500">CRUISE</span> (クルーズ)
+          </h4>
+          <p className="text-xs text-gray-300 font-bold tracking-wider">
+            サスペンション・アライメント・チューニング相談受付中
+          </p>
+        </div>
+
         </div>
 
         <div className="flex flex-col gap-3 mb-6">
           <button 
             onClick={() => {
               const traceRate = aiFeatures?.smoothRatio ? Math.round(aiFeatures.smoothRatio * 100) : 0;
-              const text = `【G-Smooth Driving Lab】今日の運転スムーズスコアは【${jerkScore}点】でした！摩擦円トレース率: ${traceRate}% #GSmooth #丁寧な荷重移動 #安全運転`;
+              const maxGVal = aiFeatures?.maxG ? aiFeatures.maxG.toFixed(2) : "0.00";
               const url = "https://driving-analyzer.vercel.app";
-              window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
+              let text = "";
+              if (mode === "Street") {
+                text = `今日の運転スムーズスコアは【${jerkScore}点】！\n同乗者もタイヤも喜ぶ丁寧な荷重移動ができているか、チューニングショップ『クルーズ』のG診断アプリでチェックしました🏎️💨\n\nあなたの運転は何点？無料診断はこちら👇\n${url}\n\n#クルーズ #CRUISE #GSmooth #丁寧な運転 #足回り点検 #安全運転`;
+              } else {
+                text = `サーキット走行の荷重移動を診断！\n本日の最大G: 【${maxGVal}G】 / 摩擦円トレース率: 【${traceRate}%】🔥\nチューニングショップ『クルーズ』のテレメトリー診断で走りを分析中！\n\n${url}\n\n#クルーズ #CRUISE #サーキット走行 #アライメント調整 #十勝スピードウェイ #GSmooth`;
+              }
+              window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
             }}
             className="w-full bg-[#000000] border border-gray-700 hover:bg-gray-800 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-white"
           >
