@@ -38,6 +38,7 @@ export default function Home() {
   // GPS & Lap trigger states
   const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number} | null>(null);
   const [lastLapTriggerTime, setLastLapTriggerTime] = useState<number>(0);
+  const recentGpsPoints = useRef<{time: number, dist: number}[]>([]);
   
   // Utility to calculate distance in meters
   const getDistanceInM = useCallback((lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -162,19 +163,70 @@ export default function Home() {
   useEffect(() => {
     if (viewState !== "measuring" || mode !== "Track" || !targetLocation) return;
     
+    // Clear recent points on start
+    recentGpsPoints.current = [];
+    
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
+        // Use position.timestamp for maximum precision, fallback to Date.now()
+        const now = position.timestamp || Date.now();
         const dist = getDistanceInM(latitude, longitude, targetLocation.lat, targetLocation.lng);
-        const now = Date.now();
-        // 半径20メートル以内に入り、かつ前回のラップから10秒以上経過している場合
-        if (dist < 20 && now - lastLapTriggerTime > 10000) {
-          triggerLap(now);
-          setLastLapTriggerTime(now);
+        
+        recentGpsPoints.current.push({ time: now, dist });
+        if (recentGpsPoints.current.length > 5) {
+          recentGpsPoints.current.shift();
+        }
+
+        const pts = recentGpsPoints.current;
+        if (pts.length >= 3) {
+          const p1 = pts[pts.length - 3];
+          const p2 = pts[pts.length - 2];
+          const p3 = pts[pts.length - 1];
+
+          // 判定: V字型に距離が変化した（p2が最接近点）、かつターゲット付近（例: 40m以内）
+          if (p2.dist < 40 && p1.dist > p2.dist && p3.dist > p2.dist) {
+            // パラボラ近似 (二次補間) で真の最接近時間(t_min)を計算する
+            const t1 = p1.time;
+            const t2 = p2.time;
+            const t3 = p3.time;
+
+            const x1 = t1 - t2;
+            const x3 = t3 - t2;
+            
+            const y1 = p1.dist * p1.dist;
+            const y2 = p2.dist * p2.dist;
+            const y3 = p3.dist * p3.dist;
+
+            const dy1 = y1 - y2;
+            const dy3 = y3 - y2;
+
+            const denom = x1 * x3 * (x1 - x3);
+            if (denom !== 0) {
+              const a = (dy1 * x3 - dy3 * x1) / denom;
+              const b = (dy1 * x3 * x3 - dy3 * x1 * x1) / (x1 * x3 * (x3 - x1));
+
+              let t_min = t2;
+              if (a > 0) {
+                // b / (2a)
+                let x_min = -b / (2 * a);
+                // 補間結果が範囲外に飛ぶのを防ぐ
+                x_min = Math.max(x1, Math.min(x3, x_min));
+                t_min = t2 + x_min;
+              }
+
+              if (Date.now() - lastLapTriggerTime > 10000) {
+                triggerLap(t_min);
+                setLastLapTriggerTime(Date.now());
+                // 重複トリガー防止のために履歴をクリア
+                recentGpsPoints.current = [];
+              }
+            }
+          }
         }
       },
       (error) => console.error("GPS Watch Error:", error),
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
     );
     
     return () => navigator.geolocation.clearWatch(watchId);
